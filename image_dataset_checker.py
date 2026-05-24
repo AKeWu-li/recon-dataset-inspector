@@ -107,6 +107,48 @@ def write_summary(summary_path, img_path, stats):
         f.write("## 5. 分辨率分布图\n\n")
         f.write("![分辨率分布图](resolution_distribution.png)\n")
 
+# 将清晰图片放进clean_images，增加clean_immages_mapping.csv
+def export_clean_images(image_infos, clean_folder, mapping_csv_path):
+    index = 1
+
+    with open(mapping_csv_path, mode="w", newline="", encoding="utf-8") as f:
+
+        writer = csv.writer(f)
+
+        writer.writerow([
+            "new_name",
+            "original_name",
+            "original_path",
+            "width",
+            "height",
+            "blur_score"
+        ])
+
+        for img_info in image_infos:
+            if img_info["is_blurry"]:
+                continue
+
+            suffix = img_info["suffix"]
+            new_image_name = f"{index:06d}{suffix}"
+            new_image_path = clean_folder / new_image_name
+
+            shutil.copy2(img_info["path"], new_image_path)
+
+            writer.writerow([
+                new_image_name,
+                img_info["name"],
+                str(img_info["path"]),
+                img_info["width"],
+                img_info["height"],
+                img_info["blur_score"]
+            ])
+
+            index += 1
+
+    print(f"清洗后的图片已保存到：{clean_folder}")
+    print(f"重命名映射表已保存到：{mapping_csv_path}")
+
+
 def scan_images(folder, blur_threshold, blur_folder):
     # 各类图片数量
     count = 0
@@ -158,6 +200,7 @@ def scan_images(folder, blur_threshold, blur_folder):
 
             image_infos.append({
                 "name": file.name,
+                "path":file,
                 "suffix": suffix,
                 "width": width,
                 "height": height,
@@ -202,6 +245,104 @@ def scan_images(folder, blur_threshold, blur_folder):
 
     return image_infos, image_files, stats
 
+# 生成colmap批处理脚本
+def generate_colmap_bat(clean_folder, output_folder):
+    colmap_workspace = output_folder / "colmap_workspace"
+    colmap_workspace.mkdir(parents=True, exist_ok=True)
+
+    sparse_folder = colmap_workspace / "sparse"
+    sparse_folder.mkdir(parents=True, exist_ok=True)
+
+    script_path = output_folder / "run_colmap.bat"
+
+    with open(script_path, "w", encoding="utf-8") as f:
+        f.write("@echo off\n")
+        f.write("echo Running COLMAP reconstruction...\n\n")
+
+        f.write("set \"SCRIPT_DIR=%~dp0\"\n")
+        f.write("set \"IMAGE_PATH=%SCRIPT_DIR%clean_images\"\n")
+        f.write("set \"WORKSPACE_PATH=%SCRIPT_DIR%colmap_workspace\"\n")
+        f.write("set \"DATABASE_PATH=%WORKSPACE_PATH%\\database.db\"\n")
+        f.write("set \"SPARSE_PATH=%WORKSPACE_PATH%\\sparse\"\n")
+        f.write("set \"MODEL_PATH=%SPARSE_PATH%\\0\"\n")
+        f.write("set \"TXT_PATH=%WORKSPACE_PATH%\\sparse_txt\"\n")
+        f.write("set \"PLY_PATH=%WORKSPACE_PATH%\\sparse.ply\"\n")
+        f.write("set \"REPORT_PATH=%WORKSPACE_PATH%\\model_report.txt\"\n\n")
+
+        f.write("if exist \"%WORKSPACE_PATH%\" rmdir /s /q \"%WORKSPACE_PATH%\"\n")
+        f.write("mkdir \"%WORKSPACE_PATH%\"\n")
+        f.write("mkdir \"%SPARSE_PATH%\"\n")
+        f.write("mkdir \"%TXT_PATH%\"\n\n")
+
+        f.write("colmap feature_extractor ^\n")
+        f.write("  --database_path \"%DATABASE_PATH%\" ^\n")
+        f.write("  --image_path \"%IMAGE_PATH%\"\n\n")
+        f.write("if errorlevel 1 (\n")
+        f.write("  echo feature_extractor failed.\n")
+        f.write("  pause\n")
+        f.write("  exit /b 1\n")
+        f.write(")\n\n")
+
+        f.write("colmap exhaustive_matcher ^\n")
+        f.write("  --database_path \"%DATABASE_PATH%\"\n\n")
+        f.write("if errorlevel 1 (\n")
+        f.write("  echo exhaustive_matcher failed.\n")
+        f.write("  pause\n")
+        f.write("  exit /b 1\n")
+        f.write(")\n\n")
+
+        f.write("colmap mapper ^\n")
+        f.write("  --database_path \"%DATABASE_PATH%\" ^\n")
+        f.write("  --image_path \"%IMAGE_PATH%\" ^\n")
+        f.write("  --output_path \"%SPARSE_PATH%\"\n\n")
+        f.write("if errorlevel 1 (\n")
+        f.write("  echo mapper failed.\n")
+        f.write("  pause\n")
+        f.write("  exit /b 1\n")
+        f.write(")\n\n")
+
+        f.write("echo Exporting COLMAP model...\n\n")
+
+        f.write("if not exist \"%MODEL_PATH%\" (\n")
+        f.write("  echo COLMAP model folder not found: %MODEL_PATH%\n")
+        f.write("  pause\n")
+        f.write("  exit /b 1\n")
+        f.write(")\n\n")
+
+        f.write("colmap model_analyzer ^\n")
+        f.write("  --path \"%MODEL_PATH%\" > \"%REPORT_PATH%\"\n\n")
+        f.write("if errorlevel 1 (\n")
+        f.write("  echo model_analyzer failed.\n")
+        f.write("  pause\n")
+        f.write("  exit /b 1\n")
+        f.write(")\n\n")
+
+        f.write("colmap model_converter ^\n")
+        f.write("  --input_path \"%MODEL_PATH%\" ^\n")
+        f.write("  --output_path \"%TXT_PATH%\" ^\n")
+        f.write("  --output_type TXT\n\n")
+        f.write("if errorlevel 1 (\n")
+        f.write("  echo model_converter TXT failed.\n")
+        f.write("  pause\n")
+        f.write("  exit /b 1\n")
+        f.write(")\n\n")
+
+        f.write("colmap model_converter ^\n")
+        f.write("  --input_path \"%MODEL_PATH%\" ^\n")
+        f.write("  --output_path \"%PLY_PATH%\" ^\n")
+        f.write("  --output_type PLY\n\n")
+        f.write("if errorlevel 1 (\n")
+        f.write("  echo model_converter PLY failed.\n")
+        f.write("  pause\n")
+        f.write("  exit /b 1\n")
+        f.write(")\n\n")
+
+        f.write("echo COLMAP reconstruction and export finished.\n")
+        f.write("pause\n")
+
+    print(f"COLMAP 脚本已生成：{script_path}")
+
+
 def main():
 
     args = parse_args()
@@ -230,8 +371,18 @@ def main():
 
     blur_folder.mkdir(parents=True, exist_ok=True)
 
+    # 清晰图片文件夹
+    clean_folder = out_folder / "clean_images"
+
+    if clean_folder.exists():
+        shutil.rmtree(clean_folder)
+
+    clean_folder.mkdir(parents=True, exist_ok=True)
+
+    clean_mapping_csv_path = out_folder / "clean_images_mapping.csv"
+
     # 总结文件
-    summary_path = out_folder / "summary.md"
+    # summary_path = out_folder / "summary.md"
 
     image_infos_csv_path = out_folder / "image_infos.csv"
 
@@ -265,13 +416,17 @@ def main():
 
     write_csv(image_infos, image_infos_csv_path)
 
+    export_clean_images(image_infos , clean_folder , clean_mapping_csv_path)
+
+    generate_colmap_bat(clean_folder, out_folder)
+
     print(f"CSV 文件已保存到：{image_infos_csv_path}")
 
     resolution_plot_path = out_folder / "resolution_distribution.png"
     plot_resolution_distribution(image_infos, resolution_plot_path)
 
-    write_summary(summary_path, img_path, stats)
-    print(f"总结报告已保存到：{summary_path}")
+    # write_summary(summary_path, img_path, stats)
+    # print(f"总结报告已保存到：{summary_path}")
 
 if __name__ == "__main__":
     main()

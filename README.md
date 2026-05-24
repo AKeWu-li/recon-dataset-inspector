@@ -24,10 +24,18 @@
 ├── dataset/
 │   └── images/
 └── output/
+    ├── clean_images/
+    ├── blurry_images/
     ├── image_infos.csv
-    ├── summary.md
+    ├── clean_images_mapping.csv
     ├── resolution_distribution.png
-    └── blurry_images/
+    ├── run_colmap.bat
+    ├── reconstruction_report.md
+    └── colmap_workspace/
+        ├── model_report.txt
+        ├── sparse.ply
+        ├── sparse_txt/
+        └── camera_trajectory.png
 
 ```
 
@@ -38,6 +46,10 @@ pip install -r requirements.txt
 ## 使用方法
 
 python image_dataset_checker.py --input dataset/images --output output --blur-threshold 100
+
+运行output/run_colmap.bat
+
+python colmap_report_parser.py --output output
 
 ### 参数说明
 
