@@ -248,10 +248,10 @@ def scan_images(folder, blur_threshold, blur_folder):
 # 生成colmap批处理脚本
 def generate_colmap_bat(clean_folder, output_folder):
     colmap_workspace = output_folder / "colmap_workspace"
-    colmap_workspace.mkdir(parents=True, exist_ok=True)
 
-    sparse_folder = colmap_workspace / "sparse"
-    sparse_folder.mkdir(parents=True, exist_ok=True)
+    if colmap_workspace.exists():
+        shutil.rmtree(colmap_workspace)
+        print(f"已删除旧的 COLMAP 工作目录：{colmap_workspace}")
 
     script_path = output_folder / "run_colmap.bat"
 
@@ -268,6 +268,12 @@ def generate_colmap_bat(clean_folder, output_folder):
         f.write("set \"TXT_PATH=%WORKSPACE_PATH%\\sparse_txt\"\n")
         f.write("set \"PLY_PATH=%WORKSPACE_PATH%\\sparse.ply\"\n")
         f.write("set \"REPORT_PATH=%WORKSPACE_PATH%\\model_report.txt\"\n\n")
+
+        f.write("echo Cleaning old COLMAP workspace...\n")
+        f.write("if exist \"%WORKSPACE_PATH%\" rmdir /s /q \"%WORKSPACE_PATH%\"\n")
+        f.write("mkdir \"%WORKSPACE_PATH%\"\n")
+        f.write("mkdir \"%SPARSE_PATH%\"\n")
+        f.write("mkdir \"%TXT_PATH%\"\n\n")
 
         f.write("if exist \"%WORKSPACE_PATH%\" rmdir /s /q \"%WORKSPACE_PATH%\"\n")
         f.write("mkdir \"%WORKSPACE_PATH%\"\n")
