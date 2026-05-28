@@ -56,6 +56,12 @@ def parse_args():
         help="3DGS 训练环境名称，默认 gaussian_splatting"
     )
 
+    parser.add_argument(
+        "--auto-colmap",
+        action="store_true",
+        help="第一阶段完成后自动运行 output/run_colmap.bat，并继续执行 after-colmap 后处理"
+    )
+
     return parser.parse_args()
 
 
@@ -115,16 +121,24 @@ def run_pre_colmap_stage(args, project_root):
     print("\n第一阶段完成。")
     print(f"输出目录：{output_folder}")
 
-    if colmap_bat.exists():
+    if not colmap_bat.exists():
+        print("\n未找到 run_colmap.bat，请检查 image_dataset_checker.py 是否生成了 COLMAP 脚本。")
+        sys.exit(1)
+
+    if args.auto_colmap:
+        print("\n检测到 --auto-colmap，将自动运行 COLMAP。")
+        run_colmap_bat(output_folder, project_root)
+
+        print("\nCOLMAP 运行完成，继续执行 after-colmap 后处理。")
+        run_after_colmap_stage(args, project_root)
+    else:
         print("\n下一步请运行 COLMAP 脚本：")
         print(colmap_bat)
         print("\n例如在 PowerShell 中运行：")
         print(f"{args.output}\\run_colmap.bat")
-    else:
-        print("\n未找到 run_colmap.bat，请检查 image_dataset_checker.py 是否生成了 COLMAP 脚本。")
 
-    print("\nCOLMAP 运行完成后，再执行：")
-    print(f"python run_pipeline.py --output {args.output} --after-colmap")
+        print("\nCOLMAP 运行完成后，再执行：")
+        print(f"python run_pipeline.py --output {args.output} --after-colmap")
 
 
 def run_after_colmap_stage(args, project_root):
@@ -200,6 +214,18 @@ def run_after_colmap_stage(args, project_root):
     if not args.skip_scene_export:
         print(f"3DGS scene 目录：{output_folder / args.scene_name}")
 
+def run_colmap_bat(output_folder, project_root):
+    colmap_bat = output_folder / "run_colmap.bat"
+
+    if not colmap_bat.exists():
+        print(f"未找到 COLMAP 脚本：{colmap_bat}")
+        sys.exit(1)
+
+    run_command(
+        description="阶段 1.5：运行 COLMAP 稀疏重建脚本",
+        command=["cmd", "/c", str(colmap_bat)],
+        cwd=project_root
+    )
 
 def main():
     args = parse_args()

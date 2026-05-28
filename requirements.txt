@@ -1,3 +1,9 @@
 Pillow
 opencv-python
 matplotlib
+fastapi
+uvicorn
+sqlalchemy
+openai
+celery
+redis

@@ -201,6 +201,36 @@ def generate_reconstruction_report(output_folder):
 
     print(f"最终重建报告已生成：{reconstruction_report_path}")
 
+def count_registered_images(images_txt_path):
+    if not images_txt_path.exists():
+        return 0
+
+    count = 0
+    expect_image_line = True
+
+    with open(images_txt_path, "r", encoding="utf-8", errors="ignore") as f:
+        for raw_line in f:
+            line = raw_line.strip()
+
+            if line.startswith("#"):
+                continue
+
+            if expect_image_line:
+                if not line:
+                    continue
+
+                parts = line.split()
+
+                # IMAGE_ID QW QX QY QZ TX TY TZ CAMERA_ID IMAGE_NAME
+                if len(parts) >= 10:
+                    count += 1
+                    expect_image_line = False
+            else:
+                # 消费 POINTS2D 那一行，不管它是不是空行
+                expect_image_line = True
+
+    return count
+
 def parse_colmap_txt_model(sparse_txt_path):
     cameras_txt = sparse_txt_path / "cameras.txt"
     images_txt = sparse_txt_path / "images.txt"
@@ -220,18 +250,7 @@ def parse_colmap_txt_model(sparse_txt_path):
                     stats["camera_count"] += 1
 
     if images_txt.exists():
-        with open(images_txt, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-
-                parts = line.split()
-
-                # 图片位姿行一般至少有 10 个字段：
-                # IMAGE_ID QW QX QY QZ TX TY TZ CAMERA_ID NAME
-                if len(parts) >= 10:
-                    stats["registered_image_count"] += 1
+        stats["registered_image_count"] = count_registered_images(images_txt)
 
     if points3d_txt.exists():
         with open(points3d_txt, "r", encoding="utf-8", errors="ignore") as f:
@@ -277,13 +296,16 @@ def parse_camera_centers(images_txt_path):
     expect_image_line = True
 
     with open(images_txt_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line = line.strip()
+        for raw_line in f:
+            line = raw_line.strip()
 
-            if not line or line.startswith("#"):
+            if line.startswith("#"):
                 continue
 
             if expect_image_line:
+                if not line:
+                    continue
+
                 parts = line.split()
 
                 if len(parts) < 10:
@@ -301,7 +323,9 @@ def parse_camera_centers(images_txt_path):
                 tz = float(parts[7])
 
                 camera_id = int(parts[8])
-                image_name = parts[9]
+
+                # 比 parts[9] 更稳，如果图片名里有空格也不会丢
+                image_name = " ".join(parts[9:])
 
                 qvec = np.array([qw, qx, qy, qz])
                 tvec = np.array([tx, ty, tz])
@@ -314,14 +338,15 @@ def parse_camera_centers(images_txt_path):
                     "image_id": image_id,
                     "camera_id": camera_id,
                     "name": image_name,
-                    "x": camera_center[0],
-                    "y": camera_center[1],
-                    "z": camera_center[2]
+                    "x": float(camera_center[0]),
+                    "y": float(camera_center[1]),
+                    "z": float(camera_center[2])
                 })
 
                 expect_image_line = False
+
             else:
-                # 跳过 POINTS2D 那一行
+                # 不管 POINTS2D 行是不是空，都把它消费掉
                 expect_image_line = True
 
     return camera_centers

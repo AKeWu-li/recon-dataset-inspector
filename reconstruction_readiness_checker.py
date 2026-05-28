@@ -44,21 +44,28 @@ def count_registered_images(images_txt_path):
         return 0
 
     count = 0
+    expect_image_line = True
 
     with open(images_txt_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line = line.strip()
+        for raw_line in f:
+            line = raw_line.strip()
 
-            if not line or line.startswith("#"):
+            if line.startswith("#"):
                 continue
 
-            parts = line.split()
+            if expect_image_line:
+                if not line:
+                    continue
 
-            # COLMAP images.txt 中图片位姿行格式通常是：
-            # IMAGE_ID QW QX QY QZ TX TY TZ CAMERA_ID IMAGE_NAME
-            # POINTS2D 行第一个通常是浮点数，不会是整数 IMAGE_ID
-            if len(parts) >= 10 and is_int_string(parts[0]) and is_int_string(parts[8]):
-                count += 1
+                parts = line.split()
+
+                # IMAGE_ID QW QX QY QZ TX TY TZ CAMERA_ID IMAGE_NAME
+                if len(parts) >= 10:
+                    count += 1
+                    expect_image_line = False
+            else:
+                # 消费 POINTS2D 那一行，不管它是不是空行
+                expect_image_line = True
 
     return count
 
