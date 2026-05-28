@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -63,7 +63,7 @@ class AgentChatRequest(BaseModel):
     question: str
     use_context: bool = True
     include_logs: bool = False
-
+    use_retrieval: bool = True
 
 class AgentChatResponse(BaseModel):
     job_id: int
@@ -72,6 +72,7 @@ class AgentChatResponse(BaseModel):
     answer_source: str
     context_used: bool
     logs_included: bool
+    retrieval_used: bool
     evidence: Dict[str, Any]
 
 class AgentConversationResponse(BaseModel):
@@ -104,4 +105,48 @@ class ContextFilePreview(BaseModel):
 class AgentContextPreviewResponse(BaseModel):
     job_id: int
     files: List[ContextFilePreview]
+
+class UserCreate(BaseModel):
+    username: str = Field(min_length=3, max_length=50)
+    password: str = Field(min_length=6, max_length=128)
+
+
+class UserResponse(BaseModel):
+    id: int
+    username: str
+    is_active: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class RetrievedSection(BaseModel):
+    source: str
+    title: str
+    score: float
+    content: str
+
+
+class RetrievalPreviewResponse(BaseModel):
+    job_id: int
+    question: str
+    sections: List[RetrievedSection]
+
+class AgentGraphDebugResponse(BaseModel):
+    job_id: int
+    question: str
+    answer_source: str
+    planned_context: Optional[str]
+    auto_include_logs: bool
+    auto_use_retrieval: bool
+    context_keys: List[str]
+    retrieved_sections: List[RetrievedSection]
+    debug_steps: List[str]
+    evidence: Dict[str, Any]
+
 

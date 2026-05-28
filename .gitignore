@@ -1,9 +1,9 @@
 .env
 recon_jobs.db
 test_recon_jobs.db
-.pytest_cache/
-__pycache__/
-*.pyc
+dataset/
 output/*
 !output/.gitkeep
-dataset/
+__pycache__/
+*.pyc
+.pytest_cache/

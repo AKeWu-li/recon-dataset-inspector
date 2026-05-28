@@ -14,3 +14,17 @@ CELERY_RESULT_BACKEND = os.getenv(
     "CELERY_RESULT_BACKEND",
     "redis://localhost:6379/1"
 )
+
+JWT_SECRET_KEY = os.getenv(
+    "JWT_SECRET_KEY",
+    "dev-secret-key-change-me"
+)
+
+JWT_ALGORITHM = os.getenv(
+    "JWT_ALGORITHM",
+    "HS256"
+)
+
+ACCESS_TOKEN_EXPIRE_MINUTES = int(
+    os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+)

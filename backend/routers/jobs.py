@@ -17,12 +17,14 @@ from backend.schemas import (
 )
 from backend.config import TASK_QUEUE_MODE
 from backend.tasks import run_pipeline_task, run_after_colmap_task
+from backend.security import get_current_user
 
 
 
 router = APIRouter(
     prefix="/api/v1/jobs",
-    tags=["jobs"]
+    tags=["jobs"],
+    dependencies=[Depends(get_current_user)]
 )
 
 

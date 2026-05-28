@@ -11,16 +11,23 @@ from backend.schemas import (
     AgentChatResponse,
     AgentConversationResponse,
     LLMStatusResponse,
-    AgentContextPreviewResponse
+    AgentContextPreviewResponse,
+    RetrievalPreviewResponse,
+    AgentGraphDebugResponse
 )
 from backend.services.diagnosis_service import diagnose_job
-from backend.services.llm_service import generate_llm_answer, get_llm_status
-from backend.services.context_service import collect_job_text_context, get_context_preview
+from backend.services.diagnosis_service import diagnose_job
+from backend.services.llm_service import get_llm_status
+from backend.services.context_service import get_context_preview
+from backend.services.retrieval_service import search_job_reports
+from backend.services.agent_graph import run_agent_graph
+from backend.security import get_current_user
 
 
 router = APIRouter(
     prefix="/api/v1/agent",
-    tags=["agent"]
+    tags=["agent"],
+    dependencies=[Depends(get_current_user)]
 )
 
 
@@ -48,84 +55,26 @@ def chat_with_reconstruction_agent(
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    diagnose_result = diagnose_job(job)
-
-    quality = diagnose_result["quality"]
-    main_problems = diagnose_result["main_problems"]
-    suggestions = diagnose_result["suggestions"]
-    next_actions = diagnose_result["next_actions"]
-    evidence = diagnose_result["evidence"]
-
-    answer_lines = []
-
-    answer_lines.append(f"任务 {job.id} 当前状态是 `{job.status}`。")
-    answer_lines.append(f"系统根据当前任务输出判断，重建质量为：`{quality}`。")
-    answer_lines.append("")
-
-    answer_lines.append("主要诊断结果：")
-    for problem in main_problems:
-        answer_lines.append(f"- {problem}")
-
-    answer_lines.append("")
-    answer_lines.append("建议：")
-    for suggestion in suggestions:
-        answer_lines.append(f"- {suggestion}")
-
-    answer_lines.append("")
-    answer_lines.append("下一步可以执行：")
-    for action in next_actions:
-        answer_lines.append(f"- {action}")
-
-    answer_lines.append("")
-    answer_lines.append("关键证据：")
-    answer_lines.append(f"- 有效图片数量：{evidence.get('valid_image_count')}")
-    answer_lines.append(f"- 模糊图片数量：{evidence.get('blurry_image_count')}")
-    answer_lines.append(f"- 模糊图片比例：{evidence.get('blurry_ratio')}")
-    answer_lines.append(f"- COLMAP 工作目录是否存在：{evidence.get('colmap_workspace_exists')}")
-    answer_lines.append(f"- sparse.ply 是否存在：{evidence.get('sparse_ply_exists')}")
-    answer_lines.append(f"- sparse_txt 是否存在：{evidence.get('sparse_txt_exists')}")
-    answer_lines.append(f"- 重建报告是否存在：{evidence.get('reconstruction_report_exists')}")
-    answer_lines.append(f"- readiness 报告是否存在：{evidence.get('readiness_report_exists')}")
-    answer_lines.append(f"- 质量评分：{evidence.get('quality_score')}")
-    answer_lines.append(f"- 注册图片比例：{evidence.get('registered_ratio')}%")
-
-    rule_answer = "\n".join(answer_lines)
-
-    if request.use_context:
-        text_context = collect_job_text_context(
-            job,
-            include_logs=request.include_logs
-        )
-    else:
-        text_context = None
-
-    llm_answer, llm_error, llm_provider, llm_model = generate_llm_answer(
+    graph_result = run_agent_graph(
+        job=job,
         question=request.question,
-        diagnose_result=diagnose_result,
-        rule_answer=rule_answer,
-        text_context=text_context
+        use_context=request.use_context,
+        include_logs=request.include_logs,
+        use_retrieval=request.use_retrieval
     )
 
-    if llm_answer is not None:
-        answer = llm_answer
-        answer_source = f"llm:{llm_provider}"
-    else:
-        answer = rule_answer
-
-        if llm_error:
-            answer += f"\n\n注意：大模型回答生成失败，当前返回规则版诊断结果。错误信息：{llm_error}"
-            answer_source = f"rule_based_fallback:{llm_provider}"
-        else:
-            answer_source = "rule_based"
+    answer = graph_result["answer"]
+    answer_source = graph_result["answer_source"]
+    evidence = graph_result["evidence"]
 
     conversation = AgentConversation(
         job_id=job.id,
         question=request.question,
         answer=answer,
         answer_source=answer_source,
-        llm_provider=llm_provider,
-        llm_model=llm_model,
-        llm_error=llm_error,
+        llm_provider=graph_result.get("llm_provider"),
+        llm_model=graph_result.get("llm_model"),
+        llm_error=graph_result.get("llm_error"),
         created_at=datetime.now()
     )
 
@@ -139,6 +88,7 @@ def chat_with_reconstruction_agent(
         "answer_source": answer_source,
         "context_used": request.use_context,
         "logs_included": request.include_logs,
+        "retrieval_used": request.use_retrieval,
         "evidence": evidence
     }
 
@@ -183,4 +133,70 @@ def preview_agent_context(
     return {
         "job_id": job.id,
         "files": files
+    }
+
+@router.get(
+    "/jobs/{job_id}/retrieval-preview",
+    response_model=RetrievalPreviewResponse
+)
+def preview_report_retrieval(
+    job_id: int,
+    question: str,
+    top_k: int = 5,
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == job_id).first()
+
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    sections = search_job_reports(
+        job=job,
+        question=question,
+        top_k=top_k
+    )
+
+    return {
+        "job_id": job.id,
+        "question": question,
+        "sections": sections
+    }
+
+@router.post("/graph-debug", response_model=AgentGraphDebugResponse)
+def debug_agent_graph(
+    request: AgentChatRequest,
+    db: Session = Depends(get_db)
+):
+    job = db.query(Job).filter(Job.id == request.job_id).first()
+
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    graph_result = run_agent_graph(
+        job=job,
+        question=request.question,
+        use_context=request.use_context,
+        include_logs=request.include_logs,
+        use_retrieval=request.use_retrieval,
+        skip_llm=True
+    )
+
+    text_context = graph_result.get("text_context") or {}
+
+    retrieved_sections = text_context.get(
+        "retrieved_report_sections",
+        []
+    )
+
+    return {
+        "job_id": job.id,
+        "question": request.question,
+        "answer_source": graph_result.get("answer_source"),
+        "planned_context": graph_result.get("planned_context"),
+        "auto_include_logs": graph_result.get("auto_include_logs", False),
+        "auto_use_retrieval": graph_result.get("auto_use_retrieval", False),
+        "context_keys": list(text_context.keys()),
+        "retrieved_sections": retrieved_sections,
+        "debug_steps": graph_result.get("debug_steps", []),
+        "evidence": graph_result.get("evidence", {})
     }

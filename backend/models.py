@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean
 from datetime import datetime
 
 from backend.database import Base
@@ -20,6 +20,7 @@ class Job(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now)
 
+
 class AgentConversation(Base):
     __tablename__ = "agent_conversations"
 
@@ -34,5 +35,18 @@ class AgentConversation(Base):
     llm_provider = Column(String, nullable=True)
     llm_model = Column(String, nullable=True)
     llm_error = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    username = Column(String, unique=True, index=True, nullable=False)
+    hashed_password = Column(String, nullable=False)
+
+    is_active = Column(Boolean, default=True)
 
     created_at = Column(DateTime, default=datetime.now)

@@ -1,97 +1,43 @@
 # Recon Dataset Inspector Backend
 
-面向三维重建任务的数据处理与智能诊断后端系统。
+面向三维重建任务的数据处理、任务管理与智能诊断后端系统。
 
-本项目最初用于三维重建图像数据集质量检查，后续逐步扩展为一个基于 **FastAPI** 的后端服务，支持通过 REST API 创建数据处理任务，自动执行图像质量检测、数据清洗、COLMAP 辅助流程、重建结果解析、3DGS scene 导出，并结合 **LLM Agent** 对重建结果进行智能诊断。
-
----
-
-## 1. 项目定位
-
-本项目定位为：
-
-```text
-面向三维重建与 3DGS 实验的数据处理、任务管理与智能诊断后端系统
-```
-
-核心目标：
-
-* 将原始图像数据集自动清洗成适合三维重建实验的数据
-* 管理长耗时数据处理任务
-* 解析 COLMAP 稀疏重建结果
-* 生成重建质量报告和数据准备报告
-* 导出标准 3D Gaussian Splatting scene 目录
-* 通过 LLM Agent 自动分析重建质量并给出下一步建议
-* 体现 Python 后端开发中的 API 设计、数据库、异步任务、文件管理和 AI Agent 集成能力
+本项目最初用于三维重建图像数据集质量检查，后续扩展为一个基于 **FastAPI** 的后端系统。系统支持通过 REST API 管理三维重建数据处理任务，自动执行图像质量检测、数据清洗、COLMAP 结果解析、3D Gaussian Splatting scene 导出，并结合 **Report Retrieval + LangGraph + LLM Agent + MCP Server** 对重建结果进行智能诊断和工具化访问。
 
 ---
 
-## 2. 技术栈
+## 1. 项目简介
 
-### 后端与工程
+本项目面向三维重建与 3D Gaussian Splatting 实验场景，主要解决以下问题：
 
-```text
-Python
-FastAPI
-Pydantic
-SQLAlchemy
-SQLite
-Uvicorn
-BackgroundTasks
-Celery
-Redis
-```
+* 原始图片数据集质量参差不齐，缺少自动化检查工具
+* COLMAP 重建结果需要人工查看和分析，流程繁琐
+* 3DGS 训练前需要整理标准 scene 目录结构
+* 长耗时任务需要统一管理状态、日志和输出文件
+* 重建质量判断依赖经验，缺少自动诊断和自然语言解释
+* Agent 调用后端能力时需要稳定、可复用的工具层
+* 外部 Agent 需要通过标准协议访问后端工具能力
 
-### 图像处理与三维重建辅助
-
-```text
-Pillow
-OpenCV
-NumPy
-Matplotlib
-COLMAP
-3D Gaussian Splatting scene export
-```
-
-### AI Agent
-
-```text
-DeepSeek API / OpenAI-compatible API
-LLM Agent
-规则诊断
-报告上下文增强
-对话历史持久化
-失败降级机制
-```
-
-### 可选工程化组件
-
-```text
-Docker / Docker Compose
-Redis / Celery Worker
-.env environment configuration
-```
-
-说明：当前项目默认使用 `BackgroundTasks` 运行后台任务；已预留 `Celery + Redis` 任务队列模式，可通过环境变量切换。Docker / Redis 部署可根据本地环境后续启用。
+本项目将原本分散的脚本流程封装为后端服务，并进一步引入认证、数据库迁移、自动化测试、Agent 工作流、Tool Layer 和 MCP Server，使其更接近一个完整的 Python 后端工程项目。
 
 ---
 
-## 3. 核心功能
+## 2. 核心功能
 
-### 3.1 数据集检查与清洗
+### 2.1 数据集检查与清洗
 
-支持：
+系统可以对原始图片目录进行检查，包括：
 
-* 检查图片文件是否合法
+* 判断文件是否为有效图片
 * 统计图片格式、分辨率和像素数量
 * 使用 Laplacian 方差检测疑似模糊图片
 * 将清晰图片复制到 `clean_images/`
 * 将疑似模糊图片复制到 `blurry_images/`
-* 生成图片信息 CSV
-* 生成 clean image 文件名映射表
-* 绘制分辨率分布图
+* 生成图片信息表 `image_infos.csv`
+* 生成清洗后图片映射表 `clean_images_mapping.csv`
+* 生成分辨率分布图 `resolution_distribution.png`
 
-输出示例：
+示例输出结构：
 
 ```text
 output/job_001/
@@ -105,15 +51,15 @@ output/job_001/
 
 ---
 
-### 3.2 COLMAP 辅助流程
+### 2.2 COLMAP 辅助流程
 
-第一阶段会自动生成：
+第一阶段 pipeline 会生成 COLMAP 执行脚本：
 
 ```text
 run_colmap.bat
 ```
 
-用户运行该脚本后，会生成 COLMAP 工作目录：
+用户运行该脚本后，系统会得到 COLMAP 工作目录：
 
 ```text
 output/job_001/colmap_workspace/
@@ -134,9 +80,9 @@ output/job_001/colmap_workspace/
 
 ---
 
-### 3.3 重建结果解析与报告生成
+### 2.3 COLMAP 结果解析与报告生成
 
-系统可以解析 COLMAP 导出的 TXT 模型，并生成：
+系统可以解析 COLMAP 导出的 TXT 模型文件，并生成：
 
 ```text
 reconstruction_report.md
@@ -151,16 +97,17 @@ training_data_readiness_report.md
 * COLMAP 注册图片数量
 * 注册图片比例
 * 稀疏 3D 点数量
-* 关键文件完整性
+* 关键文件完整性检查
 * 相机轨迹可视化
 * 重建质量评分
+* 数据准备状态
 * 后续建议
 
 ---
 
-### 3.4 3D Gaussian Splatting scene 导出
+### 2.4 3D Gaussian Splatting scene 导出
 
-支持导出标准 3DGS scene 目录：
+系统支持导出标准 3DGS scene 目录：
 
 ```text
 gaussian_splatting_scene/
@@ -172,21 +119,32 @@ gaussian_splatting_scene/
         └── points3D.bin
 ```
 
-该目录可作为后续 3D Gaussian Splatting 训练输入。
+该目录可以作为后续 3D Gaussian Splatting 训练输入。
 
 ---
 
-### 3.5 后端任务管理
+### 2.5 任务管理
 
-通过 FastAPI 提供任务创建、状态查询、日志查看、报告查看和文件下载接口。
+系统通过 FastAPI 提供任务管理能力，包括：
 
-支持任务状态：
+* 创建任务
+* 查询任务列表
+* 查询任务状态
+* 查看任务输出文件
+* 查看任务运行日志
+* 查看重建报告
+* 下载任务输出文件
+* 触发 after-colmap 后处理
+* 注册已有 output 目录而不重新运行 pipeline
+
+常见任务状态：
 
 ```text
 pending
 running
 success
 failed
+registered
 after_colmap_pending
 after_colmap_running
 after_colmap_success
@@ -195,37 +153,64 @@ queued
 queue_failed
 ```
 
-任务信息保存在 SQLite 数据库中。
+---
+
+### 2.6 用户认证
+
+系统支持基于 OAuth2 Password Flow 和 JWT 的用户认证。
+
+认证接口：
+
+```text
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+```
+
+受保护接口需要携带：
+
+```text
+Authorization: Bearer <access_token>
+```
+
+认证相关技术：
+
+```text
+OAuth2 Password Flow
+JWT
+python-jose
+passlib
+bcrypt
+```
 
 ---
 
-### 3.6 LLM Agent 智能诊断
+### 2.7 智能诊断 Agent
 
-Agent 支持：
-
-* 读取任务状态
-* 读取结构化 evidence
-* 读取 reconstruction report
-* 读取 readiness report
-* 可选读取日志上下文
-* 使用规则诊断生成基础判断
-* 调用 DeepSeek / OpenAI-compatible LLM 生成自然语言回答
-* LLM 调用失败时自动降级为规则回答
-* 保存 Agent 问答历史
-* 查询 LLM 当前配置状态
-* 查询实际传给 LLM 的上下文预览
-
-示例问题：
+Agent 可以回答类似问题：
 
 ```text
 这次重建结果怎么样？
-这次结果有没有潜在风险？
-为什么这个任务没有生成报告？
-下一步我该做什么？
+这次重建有没有潜在风险？
+为什么任务没有生成报告？
+这个任务有没有报错？
+下一步我应该做什么？
 这个数据集适合继续做 3DGS 吗？
 ```
 
-示例回答来源：
+Agent 结合以下信息进行回答：
+
+```text
+规则诊断结果
+结构化 evidence
+Report Retrieval 检索到的报告片段
+可选日志上下文
+LangGraph 条件分支工作流
+LLM 生成结果
+LLM 失败降级结果
+Agent 对话历史
+```
+
+如果 LLM 调用成功：
 
 ```json
 {
@@ -243,7 +228,310 @@ Agent 支持：
 
 ---
 
-## 4. 项目结构
+## 3. 技术栈
+
+### 后端
+
+```text
+Python 3.10
+FastAPI
+Pydantic
+SQLAlchemy
+SQLite
+Alembic
+Uvicorn
+pytest
+GitHub Actions
+```
+
+### 认证
+
+```text
+OAuth2 Password Flow
+JWT
+python-jose
+passlib
+bcrypt
+```
+
+### 任务系统
+
+```text
+FastAPI BackgroundTasks
+Celery-ready architecture
+Redis-ready configuration
+```
+
+当前默认使用 `BackgroundTasks` 模式，本地运行不依赖 Redis。
+项目已预留 `Celery + Redis` 任务队列模式，可通过环境变量切换。
+
+### 图像处理与三维重建辅助
+
+```text
+Pillow
+OpenCV
+NumPy
+Matplotlib
+COLMAP
+3D Gaussian Splatting scene export
+```
+
+### Agent 相关
+
+```text
+DeepSeek API / OpenAI-compatible API
+Report Retrieval
+LangGraph
+Tool Layer
+MCP Server
+Rule-based fallback
+Conversation persistence
+```
+
+### MCP
+
+```text
+MCP Python SDK
+FastMCP
+MCP tools
+MCP Server wrapper
+```
+
+当前项目已统一使用 Python 3.10 环境，因此主后端、测试、LangGraph 和 MCP Server 可以在同一套环境中运行。
+
+---
+
+## 4. 系统架构
+
+整体架构：
+
+```text
+用户 / Swagger / 未来前端 / 外部 Agent
+        ↓
+FastAPI / MCP Server
+        ↓
+Auth Router / Job Router / Agent Router / MCP Tools
+        ↓
+Service Layer
+├── Pipeline Service
+├── Diagnosis Service
+├── Retrieval Service
+├── Context Service
+├── LLM Service
+└── LangGraph Agent Graph
+        ↓
+Tool Layer
+├── Job Tools
+├── Report Tools
+└── Agent Tools
+
+Database:
+SQLite + SQLAlchemy + Alembic
+```
+
+Agent 工作流：
+
+```text
+用户问题
+  ↓
+规则诊断
+  ↓
+上下文路由判断
+  ↓
+报告检索 / 跳过上下文
+  ↓
+可选日志上下文
+  ↓
+LLM 回答 / 规则降级
+  ↓
+保存对话历史
+```
+
+MCP 工具调用链路：
+
+```text
+外部 MCP Client / Agent
+        ↓
+MCP Server
+        ↓
+Tool Layer
+        ↓
+任务状态 / 报告检索 / LangGraph Debug / 数据库
+```
+
+---
+
+## 5. LangGraph Agent 工作流
+
+本项目使用 LangGraph 将 Agent 流程拆分为多个节点。
+
+```text
+StateGraph
+├── diagnose_node
+├── route_context_node
+├── build_rule_answer_node
+├── retrieve_report_node
+├── no_context_node
+├── add_logs_node
+└── llm_answer_node
+```
+
+工作流会根据用户问题和任务状态自动判断：
+
+* 是否需要检索报告
+* 是否需要读取日志
+* 是否只用结构化 evidence 即可回答
+* LLM 失败时是否使用规则诊断降级
+
+例如：
+
+```text
+用户问“这次重建有没有风险？”
+→ 检索报告中的风险提示和质量诊断部分
+
+用户问“这个任务有没有报错？”
+→ 自动加入日志上下文
+
+用户问“当前任务状态是什么？”
+→ 可以只使用结构化 evidence，不读取完整报告
+```
+
+---
+
+## 6. Report Retrieval
+
+系统没有简单地把完整报告全部塞给 LLM，而是实现了轻量级 Report Retrieval。
+
+流程：
+
+```text
+reconstruction_report.md
+training_data_readiness_report.md
+        ↓
+按 Markdown section 切分
+        ↓
+关键词 / 领域词打分
+        ↓
+返回 top-k 相关片段
+        ↓
+构造 LLM 上下文
+```
+
+这样可以：
+
+* 降低 token 消耗
+* 减少无关上下文干扰
+* 提高回答和问题的相关性
+* 保留可解释的检索结果
+
+检索预览接口：
+
+```text
+GET /api/v1/agent/jobs/{job_id}/retrieval-preview
+```
+
+示例返回：
+
+```json
+{
+  "job_id": 3,
+  "question": "这次重建有没有风险？",
+  "sections": [
+    {
+      "source": "readiness_report",
+      "title": "5. 风险提示",
+      "score": 16.0,
+      "content": "未发现明显风险。"
+    }
+  ]
+}
+```
+
+---
+
+## 7. Tool Layer
+
+项目将可复用能力抽象为 Tool Layer：
+
+```text
+backend/tools/
+├── common.py
+├── job_tools.py
+├── report_tools.py
+└── agent_tools.py
+```
+
+目前包含：
+
+```text
+get_job_status_tool
+diagnose_job_tool
+search_report_sections_tool
+get_context_preview_tool
+run_agent_graph_debug_tool
+```
+
+这些工具不依赖 FastAPI Router，可以被多个模块复用：
+
+```text
+FastAPI APIs
+LangGraph nodes
+MCP Server
+pytest tests
+未来外部 Agent
+```
+
+这样可以避免把业务逻辑写死在接口层，也方便后续扩展 MCP Server 或其他 Agent 接入方式。
+
+---
+
+## 8. MCP Server
+
+项目提供了基于 Tool Layer 的 MCP Server。
+
+文件：
+
+```text
+backend/mcp_server.py
+```
+
+当前暴露的只读 MCP tools：
+
+```text
+get_job_status
+diagnose_job
+search_report_sections
+get_context_preview
+run_agent_graph_debug
+```
+
+为了安全，当前 MCP Server 不暴露以下危险能力：
+
+```text
+run_command
+delete_file
+run_pipeline
+run_colmap
+download_arbitrary_file
+```
+
+MCP Server 可以直接启动：
+
+```bash
+python -m backend.mcp_server
+```
+
+如果需要使用 MCP Inspector：
+
+```bash
+mcp dev backend/mcp_server.py
+```
+
+注意：MCP Inspector 依赖 Node.js 环境。如果本地 Node.js 版本较旧，可能需要升级 Node.js 后再使用 `mcp dev`。
+
+---
+
+## 9. 项目结构
 
 ```text
 recon-dataset-inspector/
@@ -253,18 +541,39 @@ recon-dataset-inspector/
 │   ├── database.py
 │   ├── models.py
 │   ├── schemas.py
+│   ├── security.py
 │   ├── celery_app.py
 │   ├── tasks.py
+│   ├── mcp_server.py
 │   ├── routers/
+│   │   ├── auth.py
 │   │   ├── jobs.py
 │   │   └── agent.py
 │   ├── services/
 │   │   ├── pipeline_service.py
 │   │   ├── diagnosis_service.py
 │   │   ├── context_service.py
-│   │   └── llm_service.py
+│   │   ├── retrieval_service.py
+│   │   ├── llm_service.py
+│   │   └── agent_graph.py
+│   ├── tools/
+│   │   ├── common.py
+│   │   ├── job_tools.py
+│   │   ├── report_tools.py
+│   │   └── agent_tools.py
 │   └── utils/
 │       └── path_utils.py
+├── alembic/
+│   └── versions/
+├── tests/
+│   ├── conftest.py
+│   ├── test_health.py
+│   ├── test_auth.py
+│   ├── test_jobs.py
+│   └── test_agent.py
+├── .github/
+│   └── workflows/
+│       └── tests.yml
 ├── image_dataset_checker.py
 ├── blur_detector.py
 ├── colmap_report_parser.py
@@ -272,19 +581,27 @@ recon-dataset-inspector/
 ├── gaussian_scene_exporter.py
 ├── run_pipeline.py
 ├── requirements.txt
+├── alembic.ini
+├── pytest.ini
 ├── .env.example
 ├── README.md
+├── docs/
 ├── dataset/
-│   └── images/
-├── output/
-└── docs/
+└── output/
 ```
 
 ---
 
-## 5. 环境准备
+## 10. 环境准备
 
-建议使用 Python 3.9 或以上版本。
+推荐使用 Python 3.10。
+
+创建环境：
+
+```bash
+conda create -n recon310 python=3.10 -y
+conda activate recon310
+```
 
 安装依赖：
 
@@ -292,23 +609,7 @@ recon-dataset-inspector/
 pip install -r requirements.txt
 ```
 
-`requirements.txt` 示例：
-
-```text
-fastapi
-uvicorn
-sqlalchemy
-pydantic
-Pillow
-opencv-python
-matplotlib
-numpy
-openai
-celery
-redis
-```
-
-如果需要运行 COLMAP，请提前安装 COLMAP，并确保命令行中可以直接调用：
+如果需要运行 COLMAP，请提前安装 COLMAP，并确保命令行可以调用：
 
 ```bash
 colmap
@@ -316,19 +617,27 @@ colmap
 
 ---
 
-## 6. 环境变量配置
+## 11. 环境变量
 
-项目根目录可创建 `.env` 文件，也可以直接使用系统环境变量。
+可以创建 `.env` 文件，也可以使用系统环境变量。
 
-建议提供 `.env.example`：
+示例 `.env.example`：
 
 ```env
+# Database
+DATABASE_URL=sqlite:///./recon_jobs.db
+
 # Task queue mode: background or celery
 TASK_QUEUE_MODE=background
 
 # Celery / Redis
 CELERY_BROKER_URL=redis://localhost:6379/0
 CELERY_RESULT_BACKEND=redis://localhost:6379/1
+
+# JWT
+JWT_SECRET_KEY=change_me_to_a_random_secret
+JWT_ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=60
 
 # LLM provider
 LLM_PROVIDER=deepseek
@@ -337,41 +646,64 @@ LLM_MODEL=deepseek-v4-flash
 LLM_API_KEY=your_api_key_here
 ```
 
-注意：
+不要提交真实 API Key。
 
-```text
-不要把真实 .env 文件提交到 GitHub
-不要把真实 LLM_API_KEY 写进 README 或代码
-```
-
-建议 `.gitignore` 中加入：
+推荐 `.gitignore`：
 
 ```text
 .env
 recon_jobs.db
+test_recon_jobs.db
 dataset/
-output/
+output/*
+!output/.gitkeep
 __pycache__/
 *.pyc
+.pytest_cache/
 ```
 
 ---
 
-## 7. 启动后端服务
+## 12. 数据库迁移
 
-默认使用 BackgroundTasks，不依赖 Redis。
+本项目使用 Alembic 管理数据库迁移。
+
+生成迁移文件：
+
+```bash
+alembic revision --autogenerate -m "migration message"
+```
+
+执行迁移：
+
+```bash
+alembic upgrade head
+```
+
+典型用途：
+
+* 新增 users 表
+* 新增任务字段
+* 新增 Agent 对话字段
+* 后续切换 PostgreSQL 时管理 schema
+
+---
+
+## 13. 启动后端
+
+启动 FastAPI：
 
 ```bash
 uvicorn backend.main:app --reload --reload-dir backend
 ```
 
-访问健康检查接口：
+健康检查：
 
 ```text
 http://127.0.0.1:8000/health
 ```
 
-访问 API 文档：
+Swagger 文档：
 
 ```text
 http://127.0.0.1:8000/docs
@@ -379,17 +711,91 @@ http://127.0.0.1:8000/docs
 
 ---
 
-## 8. 任务运行流程
+## 14. 启动 MCP Server
 
-### 8.1 创建数据处理任务
+启动 MCP Server：
 
-接口：
+```bash
+python -m backend.mcp_server
+```
+
+如果需要使用 MCP Inspector：
+
+```bash
+mcp dev backend/mcp_server.py
+```
+
+如果 `mcp dev` 报 Node.js 版本相关错误，请升级 Node.js 后再试。
+
+---
+
+## 15. 认证流程
+
+### 注册用户
+
+```text
+POST /api/v1/auth/register
+```
+
+请求：
+
+```json
+{
+  "username": "admin",
+  "password": "test123456"
+}
+```
+
+返回：
+
+```json
+{
+  "id": 1,
+  "username": "admin",
+  "is_active": true,
+  "created_at": "2026-05-28T18:21:48"
+}
+```
+
+### 登录
+
+```text
+POST /api/v1/auth/login
+```
+
+该接口使用表单数据：
+
+```text
+username=admin
+password=test123456
+```
+
+返回：
+
+```json
+{
+  "access_token": "jwt_token_here",
+  "token_type": "bearer"
+}
+```
+
+在 Swagger 右上角点击 `Authorize`，填入：
+
+```text
+Bearer jwt_token_here
+```
+
+---
+
+## 16. 任务流程
+
+### 16.1 创建任务
 
 ```text
 POST /api/v1/jobs/
 ```
 
-请求示例：
+请求：
 
 ```json
 {
@@ -400,73 +806,44 @@ POST /api/v1/jobs/
 }
 ```
 
-说明：
+字段说明：
 
-* `input_path`：原始图片目录
-* `output_path`：任务输出目录
-* `blur_threshold`：Laplacian 模糊检测阈值
-* `auto_run`：
+| 字段               | 说明                  |
+| ---------------- | ------------------- |
+| `input_path`     | 原始图片目录              |
+| `output_path`    | 输出目录                |
+| `blur_threshold` | 模糊检测阈值              |
+| `auto_run`       | 是否自动执行第一阶段 pipeline |
 
-  * `true`：创建任务后自动执行第一阶段 pipeline
-  * `false`：只注册已有 output 目录，不重新运行 pipeline
+如果 `auto_run=false`，系统只会注册已有 output 目录，不会重新运行 pipeline。
 
 ---
 
-### 8.2 查询任务状态
+### 16.2 查询任务状态
 
 ```text
 GET /api/v1/jobs/{job_id}
 ```
 
-返回示例：
-
-```json
-{
-  "id": 3,
-  "input_path": "dataset/images",
-  "output_path": "output/job_001",
-  "blur_threshold": 50,
-  "status": "success",
-  "message": "Job finished successfully.",
-  "celery_task_id": null,
-  "created_at": "2026-05-27T20:00:00",
-  "updated_at": "2026-05-27T20:05:00"
-}
-```
-
 ---
 
-### 8.3 运行 COLMAP
+### 16.3 运行 COLMAP
 
-第一阶段完成后，手动运行该任务目录下生成的脚本：
+第一阶段完成后，运行任务目录下生成的：
 
 ```bash
 output/job_001/run_colmap.bat
 ```
 
-成功后会生成：
-
-```text
-output/job_001/colmap_workspace/
-```
-
 ---
 
-### 8.4 触发 after-colmap 后处理
-
-COLMAP 运行完成后，调用：
+### 16.4 触发 after-colmap 后处理
 
 ```text
 POST /api/v1/jobs/{job_id}/after-colmap
 ```
 
-该阶段会执行：
-
-```bash
-python run_pipeline.py --output output/job_001 --after-colmap
-```
-
-并生成：
+该阶段会生成：
 
 ```text
 reconstruction_report.md
@@ -476,12 +853,18 @@ gaussian_splatting_scene/
 
 ---
 
-## 9. API 列表
+## 17. API 列表
 
-### 9.1 Job API
+### Auth APIs
 
 ```text
-GET  /health
+POST /api/v1/auth/register
+POST /api/v1/auth/login
+```
+
+### Job APIs
+
+```text
 POST /api/v1/jobs/
 GET  /api/v1/jobs/
 GET  /api/v1/jobs/{job_id}
@@ -492,91 +875,23 @@ POST /api/v1/jobs/{job_id}/after-colmap
 GET  /api/v1/jobs/{job_id}/download/{file_path}
 ```
 
-功能说明：
-
-| API                                              | 功能            |
-| ------------------------------------------------ | ------------- |
-| `POST /api/v1/jobs/`                             | 创建数据处理任务      |
-| `GET /api/v1/jobs/`                              | 查询任务列表        |
-| `GET /api/v1/jobs/{job_id}`                      | 查询单个任务状态      |
-| `GET /api/v1/jobs/{job_id}/outputs`              | 查看任务输出文件      |
-| `GET /api/v1/jobs/{job_id}/log`                  | 查看任务运行日志      |
-| `GET /api/v1/jobs/{job_id}/report`               | 查看重建报告        |
-| `POST /api/v1/jobs/{job_id}/after-colmap`        | 触发 COLMAP 后处理 |
-| `GET /api/v1/jobs/{job_id}/download/{file_path}` | 下载任务输出文件      |
-
----
-
-### 9.2 Agent API
+### Agent APIs
 
 ```text
 POST /api/v1/agent/diagnose
 POST /api/v1/agent/chat
+POST /api/v1/agent/graph-debug
 GET  /api/v1/agent/jobs/{job_id}/conversations
 GET  /api/v1/agent/llm-status
 GET  /api/v1/agent/jobs/{job_id}/context-preview
-```
-
-功能说明：
-
-| API                                               | 功能                 |
-| ------------------------------------------------- | ------------------ |
-| `POST /api/v1/agent/diagnose`                     | 返回结构化诊断结果          |
-| `POST /api/v1/agent/chat`                         | 与 LLM Agent 对话     |
-| `GET /api/v1/agent/jobs/{job_id}/conversations`   | 查询某个任务的 Agent 对话历史 |
-| `GET /api/v1/agent/llm-status`                    | 查询当前 LLM 配置状态      |
-| `GET /api/v1/agent/jobs/{job_id}/context-preview` | 查看传给 LLM 的上下文预览    |
-
----
-
-## 10. Agent 使用示例
-
-### 10.1 结构化诊断
-
-接口：
-
-```text
-POST /api/v1/agent/diagnose
-```
-
-请求：
-
-```json
-{
-  "job_id": 3
-}
-```
-
-返回示例：
-
-```json
-{
-  "job_id": 3,
-  "job_status": "success",
-  "quality": "较好",
-  "main_problems": [
-    "未发现明显问题。"
-  ],
-  "suggestions": [
-    "当前任务结果较完整，可以继续进行 3DGS scene 导出或后续训练准备。"
-  ],
-  "next_actions": [
-    "GET /api/v1/jobs/3/report"
-  ],
-  "evidence": {
-    "valid_image_count": 318,
-    "blurry_image_count": 0,
-    "quality_score": 100,
-    "registered_ratio": 100
-  }
-}
+GET  /api/v1/agent/jobs/{job_id}/retrieval-preview
 ```
 
 ---
 
-### 10.2 LLM Agent 对话
+## 18. Agent 使用示例
 
-接口：
+### 18.1 Agent Chat
 
 ```text
 POST /api/v1/agent/chat
@@ -587,9 +902,10 @@ POST /api/v1/agent/chat
 ```json
 {
   "job_id": 3,
-  "question": "这次重建结果怎么样？",
+  "question": "这次重建有没有潜在风险？",
   "use_context": true,
-  "include_logs": false
+  "include_logs": false,
+  "use_retrieval": true
 }
 ```
 
@@ -598,11 +914,12 @@ POST /api/v1/agent/chat
 ```json
 {
   "job_id": 3,
-  "question": "这次重建结果怎么样？",
-  "answer": "根据系统提供的诊断结果和报告，这次重建任务结果较好...",
+  "question": "这次重建有没有潜在风险？",
+  "answer": "根据系统提供的诊断结果和报告，本次重建任务没有发现潜在风险...",
   "answer_source": "llm:deepseek",
   "context_used": true,
   "logs_included": false,
+  "retrieval_used": true,
   "evidence": {
     "valid_image_count": 318,
     "blurry_image_count": 0,
@@ -612,55 +929,77 @@ POST /api/v1/agent/chat
 }
 ```
 
-参数说明：
-
-| 参数              | 说明                                                      |
-| --------------- | ------------------------------------------------------- |
-| `use_context`   | 是否将报告内容加入 LLM 上下文                                       |
-| `include_logs`  | 是否将日志内容加入 LLM 上下文                                       |
-| `answer_source` | 回答来源，例如 `llm:deepseek` 或 `rule_based_fallback:deepseek` |
-
 ---
 
-## 11. LLM 配置
-
-当前项目支持 OpenAI-compatible API，因此可以使用 DeepSeek 等模型服务。
-
-示例环境变量：
-
-```env
-LLM_PROVIDER=deepseek
-LLM_BASE_URL=https://api.deepseek.com
-LLM_MODEL=deepseek-v4-flash
-LLM_API_KEY=your_api_key_here
-```
-
-检查当前 LLM 配置：
+### 18.2 Graph Debug
 
 ```text
-GET /api/v1/agent/llm-status
+POST /api/v1/agent/graph-debug
 ```
 
-返回示例：
+请求：
 
 ```json
 {
-  "provider": "deepseek",
-  "model": "deepseek-v4-flash",
-  "base_url": "https://api.deepseek.com",
-  "api_key_configured": true
+  "job_id": 3,
+  "question": "这个任务有没有报错？请结合日志分析",
+  "use_context": true,
+  "include_logs": false,
+  "use_retrieval": true
 }
 ```
 
-如果 LLM 调用失败，系统会自动返回规则诊断结果，不会导致接口整体失败。
+返回中会包含：
+
+```json
+{
+  "planned_context": "retrieval",
+  "auto_include_logs": true,
+  "auto_use_retrieval": true,
+  "context_keys": [
+    "retrieved_report_sections",
+    "backend_job_log",
+    "after_colmap_log"
+  ],
+  "debug_steps": [
+    "diagnose_node: job_status=success, quality=较好",
+    "route_context_node: use_context=True, auto_use_retrieval=True, auto_include_logs=True, planned_context=retrieval",
+    "retrieve_report_node: retrieved 5 sections",
+    "add_logs_node: backend_job_log and after_colmap_log added",
+    "llm_answer_node: skipped LLM call because skip_llm=True"
+  ]
+}
+```
+
+该接口不会调用 LLM，也不会消耗 token。
 
 ---
 
-## 12. 任务队列模式
+## 19. MCP 工具示例
 
-当前支持两种任务执行方式。
+当前 MCP Server 暴露以下只读工具：
 
-### 12.1 BackgroundTasks 模式
+```text
+get_job_status(job_id)
+diagnose_job(job_id)
+search_report_sections(job_id, question, top_k)
+get_context_preview(job_id)
+run_agent_graph_debug(job_id, question, use_context, include_logs, use_retrieval)
+```
+
+示例用途：
+
+```text
+外部 Agent 可以通过 MCP 调用 get_job_status 获取任务状态
+外部 Agent 可以通过 MCP 调用 search_report_sections 检索报告相关片段
+外部 Agent 可以通过 MCP 调用 run_agent_graph_debug 查看 Agent 工作流路径
+```
+
+---
+
+## 20. 任务队列模式
+
+### 20.1 BackgroundTasks 模式
 
 默认模式：
 
@@ -671,18 +1010,12 @@ TASK_QUEUE_MODE=background
 特点：
 
 * 不依赖 Redis
-* 适合本地开发和演示
-* FastAPI 进程内后台执行任务
-
-启动：
-
-```bash
-uvicorn backend.main:app --reload --reload-dir backend
-```
+* 适合本地开发
+* 由 FastAPI 进程执行后台任务
 
 ---
 
-### 12.2 Celery + Redis 模式
+### 20.2 Celery + Redis 模式
 
 可选模式：
 
@@ -701,9 +1034,9 @@ celery -A backend.celery_app:celery_app worker --loglevel=info --pool=solo
 说明：
 
 * Windows 本地开发建议使用 `--pool=solo`
-* 该模式需要本地或远程 Redis 服务
-* 如果未启动 Redis，Celery Worker 会连接失败
-* Docker Compose 部署 Redis 可在支持 Docker 的环境中启用
+* 该模式需要 Redis 服务
+* 如果 Redis 未启动，Celery Worker 会连接失败
+* Docker / Redis 部署可以在兼容环境中后续启用
 
 架构：
 
@@ -721,196 +1054,87 @@ SQLite 状态更新
 
 ---
 
-## 13. 文件下载接口安全设计
+## 21. 测试
 
-文件下载接口：
+本地运行测试：
+
+```bash
+python -m pytest -v
+```
+
+当前测试覆盖：
+
+* 健康检查
+* 用户注册
+* 用户登录
+* JWT 保护接口
+* `auto_run=false` 创建任务
+* 任务列表查询
+* Agent LLM 状态接口
+
+示例结果：
 
 ```text
-GET /api/v1/jobs/{job_id}/download/{file_path}
+10 passed
 ```
 
-后端会将任务输出目录解析为绝对路径，并使用路径校验防止路径穿越。
+项目已配置 GitHub Actions，在 push 和 pull request 时自动运行测试。
 
-例如禁止访问：
+配置文件：
 
 ```text
-../../backend/database.py
+.github/workflows/tests.yml
 ```
-
-只允许下载当前任务输出目录下的文件。
 
 ---
 
-## 14. 当前系统架构
+## 22. output 目录说明
+
+`output/` 是运行时产物目录，可能占用大量磁盘空间。
+
+不建议将完整 `output/` 提交到 GitHub。
+
+推荐策略：
 
 ```text
-用户 / Swagger / 前端
-        ↓
-FastAPI REST API
-        ↓
-Job Router / Agent Router
-        ↓
-Service Layer
-├── Pipeline Service
-│   ├── image_dataset_checker.py
-│   ├── run_pipeline.py
-│   ├── colmap_report_parser.py
-│   ├── reconstruction_readiness_checker.py
-│   └── gaussian_scene_exporter.py
-│
-├── Diagnosis Service
-│   └── 规则诊断 / evidence 提取
-│
-├── Context Service
-│   └── 读取报告 / 日志上下文
-│
-└── LLM Service
-    └── DeepSeek / OpenAI-compatible API
-
-        ↓
-SQLite
-├── jobs
-└── agent_conversations
+output/*
+!output/.gitkeep
 ```
 
-可选异步任务架构：
+如果需要保留示例，可以将轻量文件复制到：
 
 ```text
-FastAPI
-  ↓
-Redis
-  ↓
-Celery Worker
-  ↓
-Pipeline Service
+docs/examples/
 ```
 
----
-
-## 15. 典型使用流程
-
-### 方式一：完整新任务流程
+建议保留：
 
 ```text
-1. POST /api/v1/jobs/
-2. 等待任务状态变为 success
-3. 运行 output/job_001/run_colmap.bat
-4. POST /api/v1/jobs/{job_id}/after-colmap
-5. GET /api/v1/jobs/{job_id}/report
-6. POST /api/v1/agent/chat
+reconstruction_report_example.md
+training_data_readiness_report_example.md
+camera_trajectory.png
+scene_export_report_example.md
 ```
 
 ---
 
-### 方式二：注册已有 output 目录
-
-如果已经存在：
-
-```text
-output/job_001/
-```
-
-并且不想重新运行 pipeline，可以创建任务时传：
-
-```json
-{
-  "input_path": "dataset/images",
-  "output_path": "output/job_001",
-  "blur_threshold": 50,
-  "auto_run": false
-}
-```
-
-这样系统只会注册已有目录，不会覆盖旧结果。
-
----
-
-## 16. 常见问题
-
-### 16.1 Docker 无法使用怎么办？
-
-Docker 不是必须的。
-
-项目默认使用：
-
-```env
-TASK_QUEUE_MODE=background
-```
-
-该模式不依赖 Docker 或 Redis。
-
-如果系统支持 Docker，可以后续使用 Docker Compose 启动 Redis，并切换到 Celery 模式。
-
----
-
-### 16.2 Celery Worker 连接 Redis 失败
-
-如果看到：
-
-```text
-Cannot connect to redis://localhost:6379/0
-```
-
-说明 Redis 没有启动，或者 6379 端口没有服务监听。
-
-可以检查：
-
-```powershell
-Test-NetConnection localhost -Port 6379
-```
-
-如果返回 `False`，说明 Redis 不可用。
-
----
-
-### 16.3 ChatGPT Plus 是否包含 API 额度？
-
-不包含。
-
-LLM API 调用需要单独配置对应平台的 API Key 和额度。当前项目支持 DeepSeek 等 OpenAI-compatible API。
-
----
-
-### 16.4 为什么 Agent 有时会返回规则诊断？
-
-如果 LLM API 不可用、额度不足、网络错误或 API Key 未配置，系统会自动降级到规则诊断结果。
-
-这属于设计内的 fallback 机制。
-
----
-
-## 17. 当前项目亮点
-
-* 基于 FastAPI 实现三维重建任务后端服务
-* 使用 SQLAlchemy + SQLite 管理任务状态和 Agent 对话历史
-* 支持后台执行长耗时图像处理 pipeline
-* 支持 Celery + Redis 可选任务队列架构
-* 封装图像质量检测、COLMAP 后处理和 3DGS scene 导出流程
-* 集成 DeepSeek LLM Agent，根据重建报告和结构化 evidence 生成诊断建议
-* 支持 LLM 调用失败降级，提升系统鲁棒性
-* 支持日志查询、报告查询、文件下载和上下文预览
-* 支持注册已有 output 目录，便于实验结果复用
-
----
-
-## 18. 后续计划
+## 23. 后续计划
 
 后续可以继续扩展：
 
-* 完整跑通 Celery + Redis 生产式任务队列
-* Docker Compose 管理 API、Worker、Redis
-* 增加前端任务管理页面
-* 支持 WebSocket 实时推送任务日志
-* 接入向量数据库，实现报告和日志 RAG 检索
-* 支持多数据集批处理
-* 支持 3DGS 训练日志解析
-* 支持 PSNR / SSIM / LPIPS 指标统计
-* 支持 PostgreSQL 替换 SQLite
-* 使用 Alembic 管理数据库迁移
+* 用户级任务隔离
+* PostgreSQL 支持
+* 结构化日志
+* WebSocket / SSE 实时任务日志推送
+* 完整 Celery + Redis 部署
+* Docker Compose 支持
+* 简单 React 前端
+* 向量数据库 / 更高级的报告检索
+* MCP Inspector 兼容测试
+* 更多 Tool Layer 和 LangGraph 测试
 
 ---
 
-
-## 19. License
+## 24. License
 
 This project is for research, learning, and portfolio demonstration purposes.

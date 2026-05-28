@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from backend.database import Base, engine
-from backend.routers import jobs, agent
+from backend.routers import jobs, agent, auth
 
 Base.metadata.create_all(bind=engine)
 
@@ -20,5 +20,6 @@ def health_check():
     }
 
 
+app.include_router(auth.router)
 app.include_router(jobs.router)
 app.include_router(agent.router)
